@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -12,6 +13,7 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -161,6 +163,11 @@ type countdown struct {
 	running  bool
 }
 
+type windowPosition struct {
+	X int32 `json:"x"`
+	Y int32 `json:"y"`
+}
+
 //go:embed timer.png
 var embeddedTimerPNG []byte
 
@@ -243,11 +250,16 @@ func main() {
 	screenH, _, _ := procGetSystemMetrics.Call(smCyScreen)
 	x := int32(screenW)/2 - windowWidth/2
 	y := int32(screenH)/3 - windowHeight/2
-	if x < 0 {
-		x = 0
-	}
-	if y < 0 {
-		y = 0
+	if pos, ok := loadWindowPosition(); ok {
+		x = pos.X
+		y = pos.Y
+	} else {
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
 	}
 
 	hwnd, _, err := procCreateWindowEx.Call(
@@ -314,6 +326,7 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 			if wParam&mkLButton == 0 {
 				dragging = false
 				procReleaseCapture.Call()
+				saveWindowPosition(hwnd)
 				return 0
 			}
 			var p point
@@ -327,6 +340,7 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 		if dragging {
 			dragging = false
 			procReleaseCapture.Call()
+			saveWindowPosition(hwnd)
 		}
 		return 0
 	case wmRButtonUp:
@@ -796,6 +810,40 @@ func copyToPremultipliedBGRA(dst []byte, src *image.RGBA) {
 			dst[di+3] = byte(a)
 		}
 	}
+}
+
+func loadWindowPosition() (windowPosition, bool) {
+	data, err := os.ReadFile(positionConfigPath())
+	if err != nil {
+		return windowPosition{}, false
+	}
+
+	var pos windowPosition
+	if err := json.Unmarshal(data, &pos); err != nil {
+		return windowPosition{}, false
+	}
+	return pos, true
+}
+
+func saveWindowPosition(hwnd uintptr) {
+	var wr rect
+	if ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr))); ok == 0 {
+		return
+	}
+
+	data, err := json.Marshal(windowPosition{X: wr.Left, Y: wr.Top})
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(positionConfigPath(), data, 0644)
+}
+
+func positionConfigPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "simple-timer-position.json"
+	}
+	return filepath.Join(filepath.Dir(exe), "simple-timer-position.json")
 }
 
 func clamp(v, low, high float64) float64 {

@@ -16,6 +16,12 @@
 - 鼠标左键拖拽移动位置
 - 鼠标右键关闭程序
 
+## 位置保存
+
+- 拖拽窗口后，会保存位置到 EXE 同目录的 `simple-timer-position.json`。
+- 下次打开 `Simple Timer.exe` 会自动恢复到上一次位置。
+- 如果删除这个 JSON 文件，就会回到默认初始位置。
+
 ## 构建
 
 ```powershell

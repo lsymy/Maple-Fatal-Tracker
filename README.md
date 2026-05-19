@@ -18,6 +18,12 @@ The app is a 40x40 transparent borderless window with always-on-top, drag-and-dr
 - Left mouse button: Drag the timer window
 - Right mouse button: Close the app
 
+## Position Persistence
+
+- After dragging the window, the position is saved to `simple-timer-position.json` next to the executable.
+- The next time `Simple Timer.exe` starts, it automatically restores the last saved position.
+- If you delete `simple-timer-position.json`, the app returns to the default initial position.
+
 ## Build
 
 ```powershell
