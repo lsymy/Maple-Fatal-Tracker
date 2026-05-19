@@ -1,25 +1,39 @@
-# Maple Countdown
+# Simple Timer
 
-一个干净的 Windows 30 秒倒计时小工具：40x40 透明无边框窗口、置顶、可拖拽，不注入游戏、不读内存、不模拟输入。
+<img src="timer.png" alt="Simple Timer icon" width="40" height="40">
 
-把 `timer.png` 放在程序同目录下，程序会以 70% 透明度显示这张图片，并覆盖一层顺时针逐秒减少的阴影。
+[中文说明](README.zh-CN.md)
 
-## 快捷键
+A simple 30-second Windows countdown timer for reminding the Fatal Stricke cooldown in MapleStory.
 
-- `Ctrl+Alt+F9`：启动 / 继续
-- `Ctrl+Alt+F10`：暂停
-- `Ctrl+Alt+F11`：重置到 30 秒
-- 鼠标左键拖拽移动位置
-- 鼠标右键关闭程序
+The app is a 40x40 transparent borderless window with always-on-top, drag-and-drop positioning, and global hotkeys. It does not inject into the game, read process memory, or simulate input.
 
-## 构建
+Place `timer.png` in the same directory as the executable. The app displays it at 70% opacity and overlays a smooth clockwise shadow countdown. `salute.jpg` is converted into the application icon.
+
+## Hotkeys
+
+- `Alt+F8`: Start / resume
+- `Alt+F6`: Pause
+- `Alt+F7`: Reset to 30 seconds
+- Left mouse button: Drag the timer window
+- Right mouse button: Close the app
+
+## Build
 
 ```powershell
+go run ./tools/makeicon -in "salute.jpg" -out "app.ico"
+windres -O coff -F pe-x86-64 -i "resource.rc" -o "rsrc_windows_amd64.syso"
 go build -ldflags="-H windowsgui" -o "Simple Timer.exe" .
 ```
 
-## 安全边界
+## Safety Boundary
 
-本程序只使用普通 Win32 窗口、透明分层窗口和 `RegisterHotKey` 全局热键；没有使用 AutoHotkey、键鼠 hook、`SendInput`、模拟按键、读内存、DLL 注入或 DirectX 注入式 overlay。
+This app only uses a normal Win32 window, layered-window rendering, and `RegisterHotKey` for global hotkeys. It does not use AutoHotkey, keyboard or mouse hooks, `SendInput`, simulated key presses, process memory reading, DLL injection, or DirectX overlay injection.
 
-没有任何同机程序可以承诺 100% 不触发游戏反作弊误判。如果账号安全优先，第二屏计时器仍然是最稳妥方案。
+This app does not read, modify, detect, or control MapleStory / Nexon / any other program. It also does not send keyboard, mouse, or macro input to other programs.
+
+## Disclaimer
+
+This tool is only for personal countdown reminders. It is not an official Nexon, Wizet, or MapleStory tool, and it is not affiliated with them in any way.
+
+No program running on the same PC can guarantee that it will never be flagged by game anti-cheat systems. Use this tool at your own risk. If account safety is the top priority, a timer on a second screen or separate device is still the safest option.

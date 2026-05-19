@@ -54,9 +54,9 @@ const (
 	modAlt     = 0x0001
 	modControl = 0x0002
 
-	vkF9  = 0x78
-	vkF10 = 0x79
-	vkF11 = 0x7A
+	vkF6 = 0x75
+	vkF7 = 0x76
+	vkF8 = 0x77
 
 	smCxScreen = 0
 	smCyScreen = 1
@@ -188,6 +188,7 @@ var (
 	procSetCapture          = user32.NewProc("SetCapture")
 	procReleaseCapture      = user32.NewProc("ReleaseCapture")
 	procLoadCursor          = user32.NewProc("LoadCursorW")
+	procLoadIcon            = user32.NewProc("LoadIconW")
 	procMessageBox          = user32.NewProc("MessageBoxW")
 	procSetProcessDPIAware  = user32.NewProc("SetProcessDPIAware")
 
@@ -217,13 +218,16 @@ func main() {
 	className := mustUTF16Ptr("MapleCleanCountdownWindow")
 	windowTitle := mustUTF16Ptr("Simple Timer")
 	cursor, _, _ := procLoadCursor.Call(0, uintptr(idcArrow))
+	icon, _, _ := procLoadIcon.Call(hInstance, uintptr(1))
 
 	wc := wndClassEx{
 		CbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
 		LpfnWndProc:   wndProcPtr,
 		HInstance:     hInstance,
+		HIcon:         icon,
 		HCursor:       cursor,
 		LpszClassName: className,
+		HIconSm:       icon,
 	}
 
 	atom, _, err := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
@@ -338,9 +342,9 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 }
 
 func registerHotkeys(hwnd uintptr) {
-	registerHotkey(hwnd, hotkeyStart, modControl|modAlt, vkF9, "Ctrl+Alt+F9 启动/继续")
-	registerHotkey(hwnd, hotkeyPause, modControl|modAlt, vkF10, "Ctrl+Alt+F10 暂停")
-	registerHotkey(hwnd, hotkeyReset, modControl|modAlt, vkF11, "Ctrl+Alt+F11 重置")
+	registerHotkey(hwnd, hotkeyStart, modAlt, vkF8, "Alt+F8 启动/继续")
+	registerHotkey(hwnd, hotkeyPause, modAlt, vkF6, "Alt+F6 暂停")
+	registerHotkey(hwnd, hotkeyReset, modAlt, vkF7, "Alt+F7 重置")
 }
 
 func registerHotkey(hwnd uintptr, id int, modifiers uint32, key uint32, label string) {
