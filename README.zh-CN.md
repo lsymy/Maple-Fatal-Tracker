@@ -10,9 +10,30 @@
 
 ## 快捷键
 
-- `Alt+F8`：启动 / 继续
-- `Alt+F6`：暂停
-- `Alt+F7`：重置到 30 秒
+- 默认快捷键：
+	- `Alt+F8`：启动 / 继续
+	- `Alt+F6`：暂停
+	- `Alt+F7`：重置到 30 秒
+- 你可以通过 EXE 同目录的 `simple-timer-hotkeys.json` 自定义快捷键。
+- 如果该文件不存在，程序会自动按默认值创建。
+
+示例：
+
+```json
+{
+	"start": "Alt+F8",
+	"pause": "Alt+F6",
+	"reset": "Ctrl+Shift+R"
+}
+```
+
+支持格式：
+
+- 不区分大小写，使用 `+` 连接，例如 `Ctrl+Alt+F9`
+- 修饰键：`Alt`、`Ctrl`/`Control`、`Shift`、`Win`
+- 主键：`A-Z`、`0-9`、`F1-F24`、`Space`、`Tab`、`Enter`、`Esc`
+- 某个快捷键配置无效时，只会该项回退到默认值
+
 - 鼠标左键拖拽移动位置
 - 鼠标右键关闭程序
 

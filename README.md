@@ -12,9 +12,30 @@ The app is a 40x40 transparent borderless window with always-on-top, drag-and-dr
 
 ## Hotkeys
 
-- `Alt+F8`: Start / resume
-- `Alt+F6`: Pause
-- `Alt+F7`: Reset to 30 seconds
+- By default:
+	- `Alt+F8`: Start / resume
+	- `Alt+F6`: Pause
+	- `Alt+F7`: Reset to 30 seconds
+- You can customize hotkeys with `simple-timer-hotkeys.json` in the same folder as the EXE.
+- If the file does not exist, the app creates it automatically with defaults.
+
+Example:
+
+```json
+{
+	"start": "Alt+F8",
+	"pause": "Alt+F6",
+	"reset": "Ctrl+Shift+R"
+}
+```
+
+Supported format:
+
+- Case-insensitive, using `+` to join keys, e.g. `Ctrl+Alt+F9`
+- Modifiers: `Alt`, `Ctrl`/`Control`, `Shift`, `Win`
+- Main key: `A-Z`, `0-9`, `F1-F24`, `Space`, `Tab`, `Enter`, `Esc`
+- If one hotkey is invalid, only that action falls back to its default value
+
 - Left mouse button: Drag the timer window
 - Right mouse button: Close the app
 
