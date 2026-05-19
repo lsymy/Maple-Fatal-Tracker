@@ -1,6 +1,6 @@
 # Simple Timer
 
-<img src="timer.png" alt="Simple Timer icon" width="40" height="40">
+<img src="preview.png" alt="Simple Timer preview" width="72">
 
 [中文说明](README.zh-CN.md)
 
