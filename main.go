@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
@@ -10,7 +12,6 @@ import (
 	"image/png"
 	"math"
 	"os"
-	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -159,6 +160,9 @@ type countdown struct {
 	started  time.Time
 	running  bool
 }
+
+//go:embed timer.png
+var embeddedTimerPNG []byte
 
 var (
 	user32   = syscall.NewLazyDLL("user32.dll")
@@ -430,39 +434,15 @@ func shadowClearedProgress(remaining time.Duration) float64 {
 }
 
 func loadTimerPNG() *image.NRGBA {
-	paths := []string{"timer.png"}
-	if exe, err := os.Executable(); err == nil {
-		exeTimer := filepath.Join(filepath.Dir(exe), "timer.png")
-		if exeTimer != paths[0] {
-			paths = append(paths, exeTimer)
-		}
+	decoded, err := png.Decode(bytes.NewReader(embeddedTimerPNG))
+	if err != nil {
+		fatalf("内置 timer.png 解码失败: %v", err)
 	}
 
-	var openErr error
-	for _, path := range paths {
-		file, err := os.Open(path)
-		if err != nil {
-			openErr = err
-			continue
-		}
-
-		decoded, err := png.Decode(file)
-		closeErr := file.Close()
-		if err != nil {
-			fatalf("timer.png 解码失败: %v", err)
-		}
-		if closeErr != nil {
-			fatalf("timer.png 关闭失败: %v", closeErr)
-		}
-
-		bounds := decoded.Bounds()
-		face := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
-		draw.Draw(face, face.Bounds(), decoded, bounds.Min, draw.Src)
-		return face
-	}
-
-	fatalf("找不到 timer.png，已查找: %v，最后错误: %v", paths, openErr)
-	return nil
+	bounds := decoded.Bounds()
+	face := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	draw.Draw(face, face.Bounds(), decoded, bounds.Min, draw.Src)
+	return face
 }
 
 func drawTimerImage(dst *image.RGBA, src *image.NRGBA, opacity float64) {

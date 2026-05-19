@@ -8,7 +8,7 @@ A simple 30-second Windows countdown timer for reminding the Fatal Stricke coold
 
 The app is a 40x40 transparent borderless window with always-on-top, drag-and-drop positioning, and global hotkeys. It does not inject into the game, read process memory, or simulate input.
 
-Place `timer.png` in the same directory as the executable. The app displays it at 70% opacity and overlays a smooth clockwise shadow countdown. `salute.jpg` is converted into the application icon.
+`timer.png` is embedded into the executable at build time. The app displays it at 70% opacity and overlays a smooth clockwise shadow countdown. `salute.jpg` is converted into the application icon.
 
 ## Hotkeys
 
@@ -25,6 +25,8 @@ go run ./tools/makeicon -in "salute.jpg" -out "app.ico"
 windres -O coff -F pe-x86-64 -i "resource.rc" -o "rsrc_windows_amd64.syso"
 go build -ldflags="-H windowsgui" -o "Simple Timer.exe" .
 ```
+
+After building, `Simple Timer.exe` can run by itself. `timer.png` is only needed when rebuilding with a different timer image.
 
 ## Safety Boundary
 

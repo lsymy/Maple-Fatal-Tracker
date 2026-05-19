@@ -6,7 +6,7 @@
 
 程序是 40x40 透明无边框窗口，支持置顶、拖拽和全局快捷键；不注入游戏、不读内存、不模拟输入。
 
-把 `timer.png` 放在程序同目录下，程序会以 70% 透明度显示这张图片，并覆盖一层顺时针逐秒减少的阴影。`salute.jpg` 会被转换成程序图标。
+`timer.png` 会在构建时被嵌入到可执行文件里。程序会以 70% 透明度显示这张图片，并覆盖一层顺时针逐秒减少的阴影。`salute.jpg` 会被转换成程序图标。
 
 ## 快捷键
 
@@ -23,6 +23,8 @@ go run ./tools/makeicon -in "salute.jpg" -out "app.ico"
 windres -O coff -F pe-x86-64 -i "resource.rc" -o "rsrc_windows_amd64.syso"
 go build -ldflags="-H windowsgui" -o "Simple Timer.exe" .
 ```
+
+构建完成后，`Simple Timer.exe` 可以单独运行。只有需要更换计时器图片并重新构建时，才需要 `timer.png`。
 
 ## 安全边界
 
