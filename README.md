@@ -6,7 +6,7 @@
 
 A simple 30-second Windows countdown timer for reminding the Fatal Stricke cooldown in MapleStory.
 
-The app is a 40x40 transparent borderless window with always-on-top, drag-and-drop positioning, and global hotkeys. It does not inject into the game, read process memory, or simulate input.
+The app is a 64x64 transparent borderless window with always-on-top, drag-and-drop positioning, corner resizing, and global hotkeys. It does not inject into the game, read process memory, or simulate input.
 
 `timer.png` is embedded into the executable at build time. The app displays it at 70% opacity and overlays a smooth clockwise shadow countdown. `salute.jpg` is converted into the application icon.
 
@@ -16,12 +16,13 @@ The app is a 40x40 transparent borderless window with always-on-top, drag-and-dr
 - `Alt+F6`: Pause
 - `Alt+F7`: Reset to 30 seconds
 - Left mouse button: Drag the timer window
+- Bottom-right corner: Drag to resize the timer window
 - Right mouse button: Close the app
 
 ## Position Persistence
 
-- After dragging the window, the position is saved to `simple-timer-position.json` next to the executable.
-- The next time `Simple Timer.exe` starts, it automatically restores the last saved position.
+- After dragging or resizing the window, the position and size are saved to `simple-timer-position.json` next to the executable.
+- The next time `Simple Timer.exe` starts, it automatically restores the last saved position and size.
 - If you delete `simple-timer-position.json`, the app returns to the default initial position.
 
 ## Build

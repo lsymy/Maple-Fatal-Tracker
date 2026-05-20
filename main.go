@@ -21,12 +21,14 @@ import (
 )
 
 const (
-	windowWidth  = 40
-	windowHeight = 40
-	imageOpacity = 0.70
-	shadowAlpha  = 120
-	countdownLen = 30 * time.Second
-	frameMS      = 33
+	defaultWindowSize = 64
+	minWindowSize     = 32
+	maxWindowSize     = 256
+	resizeGripSize    = 12
+	imageOpacity      = 0.70
+	shadowAlpha       = 120
+	countdownLen      = 30 * time.Second
+	frameMS           = 33
 
 	timerID = 1
 
@@ -164,8 +166,10 @@ type countdown struct {
 }
 
 type windowPosition struct {
-	X int32 `json:"x"`
-	Y int32 `json:"y"`
+	X      int32 `json:"x"`
+	Y      int32 `json:"y"`
+	Width  int   `json:"width"`
+	Height int   `json:"height"`
 }
 
 //go:embed timer.png
@@ -215,7 +219,11 @@ var (
 	appTimer  = countdown{duration: countdownLen}
 	timerFace *image.NRGBA
 
+	windowWidth  = defaultWindowSize
+	windowHeight = defaultWindowSize
+
 	dragging        bool
+	resizing        bool
 	dragCursorStart point
 	dragWindowStart rect
 )
@@ -248,11 +256,13 @@ func main() {
 
 	screenW, _, _ := procGetSystemMetrics.Call(smCxScreen)
 	screenH, _, _ := procGetSystemMetrics.Call(smCyScreen)
-	x := int32(screenW)/2 - windowWidth/2
-	y := int32(screenH)/3 - windowHeight/2
+	x := int32(screenW)/2 - int32(windowWidth)/2
+	y := int32(screenH)/3 - int32(windowHeight)/2
 	if pos, ok := loadWindowPosition(); ok {
 		x = pos.X
 		y = pos.Y
+		windowWidth = clampInt(pos.Width, minWindowSize, maxWindowSize)
+		windowHeight = clampInt(pos.Height, minWindowSize, maxWindowSize)
 	} else {
 		if x < 0 {
 			x = 0
@@ -269,8 +279,8 @@ func main() {
 		wsPopup,
 		uintptr(x),
 		uintptr(y),
-		windowWidth,
-		windowHeight,
+		uintptr(windowWidth),
+		uintptr(windowHeight),
 		0,
 		0,
 		hInstance,
@@ -316,31 +326,44 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 		render(hwnd)
 		return 0
 	case wmLButtonDown:
-		dragging = true
 		procSetCapture.Call(hwnd)
 		procGetCursorPos.Call(uintptr(unsafe.Pointer(&dragCursorStart)))
 		procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&dragWindowStart)))
+		resizing = isInResizeGrip(dragCursorStart, dragWindowStart)
+		dragging = !resizing
 		return 0
 	case wmMouseMove:
-		if dragging {
+		if dragging || resizing {
 			if wParam&mkLButton == 0 {
 				dragging = false
+				resizing = false
 				procReleaseCapture.Call()
-				saveWindowPosition(hwnd)
+				saveWindowConfig(hwnd)
 				return 0
 			}
 			var p point
 			procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
 			dx := p.X - dragCursorStart.X
 			dy := p.Y - dragCursorStart.Y
-			procSetWindowPos.Call(hwnd, hwndTopmost, uintptr(dragWindowStart.Left+dx), uintptr(dragWindowStart.Top+dy), 0, 0, swpNoSize|swpNoActivate)
+			if resizing {
+				startW := int(dragWindowStart.Right - dragWindowStart.Left)
+				startH := int(dragWindowStart.Bottom - dragWindowStart.Top)
+				nextSize := clampInt(maxInt(startW+int(dx), startH+int(dy)), minWindowSize, maxWindowSize)
+				windowWidth = nextSize
+				windowHeight = nextSize
+				procSetWindowPos.Call(hwnd, hwndTopmost, uintptr(dragWindowStart.Left), uintptr(dragWindowStart.Top), uintptr(windowWidth), uintptr(windowHeight), swpNoActivate)
+				render(hwnd)
+			} else {
+				procSetWindowPos.Call(hwnd, hwndTopmost, uintptr(dragWindowStart.Left+dx), uintptr(dragWindowStart.Top+dy), 0, 0, swpNoSize|swpNoActivate)
+			}
 		}
 		return 0
 	case wmLButtonUp:
-		if dragging {
+		if dragging || resizing {
 			dragging = false
+			resizing = false
 			procReleaseCapture.Call()
-			saveWindowPosition(hwnd)
+			saveWindowConfig(hwnd)
 		}
 		return 0
 	case wmRButtonUp:
@@ -438,6 +461,7 @@ func renderFrame(remaining time.Duration) *image.RGBA {
 	drawCenteredSevenText(img, text, 0, -1, color.RGBA{0, 0, 0, 175})
 	drawCenteredSevenText(img, text, 0, 1, color.RGBA{0, 0, 0, 175})
 	drawCenteredSevenText(img, text, 0, 0, color.RGBA{255, 230, 30, 255})
+	drawResizeGrip(img)
 
 	return img
 }
@@ -570,15 +594,40 @@ func minInt(a, b int) int {
 	return b
 }
 
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func clampInt(v, low, high int) int {
+	if v < low {
+		return low
+	}
+	if v > high {
+		return high
+	}
+	return v
+}
+
 func drawCenteredSevenText(img *image.RGBA, text string, offsetX float64, offsetY float64, col color.RGBA) {
-	layer := image.NewRGBA(image.Rect(0, 0, windowWidth, windowHeight))
-	drawSevenText(layer, text, float64(windowWidth)/2, 10, col)
+	b := img.Bounds()
+	width := b.Dx()
+	height := b.Dy()
+	fontHeight := math.Max(20, float64(minInt(width, height))*0.50)
+	digitWidth := fontHeight * 0.60
+	gap := fontHeight * 0.15
+	thick := math.Max(3, fontHeight*0.15)
+
+	layer := image.NewRGBA(image.Rect(0, 0, width, height))
+	drawSevenText(layer, text, float64(width)/2, 0, digitWidth, fontHeight, thick, gap, col)
 	bounds, ok := alphaBounds(layer)
 	if !ok {
 		return
 	}
-	dx := int(math.Round((float64(windowWidth)-float64(bounds.Dx()))/2 - float64(bounds.Min.X) + offsetX))
-	dy := int(math.Round((float64(windowHeight)-float64(bounds.Dy()))/2 - float64(bounds.Min.Y) + offsetY))
+	dx := int(math.Round((float64(width)-float64(bounds.Dx()))/2 - float64(bounds.Min.X) + offsetX))
+	dy := int(math.Round((float64(height)-float64(bounds.Dy()))/2 - float64(bounds.Min.Y) + offsetY))
 	blendImageAt(img, layer, dx, dy)
 }
 
@@ -622,17 +671,31 @@ func blendImageAt(dst *image.RGBA, src *image.RGBA, offsetX int, offsetY int) {
 	}
 }
 
-func drawSevenText(img *image.RGBA, text string, centerX float64, top float64, col color.RGBA) {
-	const digitW = 12.0
-	const digitH = 20.0
-	const gap = 3.0
+func drawSevenText(img *image.RGBA, text string, centerX float64, top float64, digitW float64, digitH float64, thick float64, gap float64, col color.RGBA) {
 	total := float64(len(text))*digitW + float64(len(text)-1)*gap
 	x := centerX - total/2
 	for _, ch := range text {
 		if ch >= '0' && ch <= '9' {
-			drawSevenDigit(img, int(ch-'0'), x, top, digitW, digitH, 3, col)
+			drawSevenDigit(img, int(ch-'0'), x, top, digitW, digitH, thick, col)
 		}
 		x += digitW + gap
+	}
+}
+
+func drawResizeGrip(img *image.RGBA) {
+	b := img.Bounds()
+	right := float64(b.Dx() - 4)
+	bottom := float64(b.Dy() - 4)
+	lineColor := color.RGBA{255, 230, 30, 135}
+	shadowColor := color.RGBA{0, 0, 0, 120}
+	for i := 0; i < 3; i++ {
+		offset := float64(i * 4)
+		x1 := right - offset - 8
+		y1 := bottom + 1
+		x2 := right + 1
+		y2 := bottom - offset - 8
+		drawCapsuleAA(img, x1+1, y1+1, x2+1, y2+1, 1.5, shadowColor)
+		drawCapsuleAA(img, x1, y1, x2, y2, 1.5, lineColor)
 	}
 }
 
@@ -822,20 +885,35 @@ func loadWindowPosition() (windowPosition, bool) {
 	if err := json.Unmarshal(data, &pos); err != nil {
 		return windowPosition{}, false
 	}
+	if pos.Width == 0 {
+		pos.Width = defaultWindowSize
+	}
+	if pos.Height == 0 {
+		pos.Height = defaultWindowSize
+	}
 	return pos, true
 }
 
-func saveWindowPosition(hwnd uintptr) {
+func saveWindowConfig(hwnd uintptr) {
 	var wr rect
 	if ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr))); ok == 0 {
 		return
 	}
 
-	data, err := json.Marshal(windowPosition{X: wr.Left, Y: wr.Top})
+	data, err := json.Marshal(windowPosition{
+		X:      wr.Left,
+		Y:      wr.Top,
+		Width:  int(wr.Right - wr.Left),
+		Height: int(wr.Bottom - wr.Top),
+	})
 	if err != nil {
 		return
 	}
 	_ = os.WriteFile(positionConfigPath(), data, 0644)
+}
+
+func isInResizeGrip(cursor point, window rect) bool {
+	return cursor.X >= window.Right-resizeGripSize && cursor.Y >= window.Bottom-resizeGripSize
 }
 
 func positionConfigPath() string {
