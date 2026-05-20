@@ -175,12 +175,18 @@ type windowPosition struct {
 	Y      int32 `json:"y"`
 	Width  int   `json:"width"`
 	Height int   `json:"height"`
+	Saved  bool  `json:"saved"`
 }
 
 type hotkeyConfig struct {
 	Start string `json:"start"`
 	Pause string `json:"pause"`
 	Reset string `json:"reset"`
+}
+
+type appConfig struct {
+	Hotkeys hotkeyConfig   `json:"hotkeys"`
+	Window  windowPosition `json:"window"`
 }
 
 type hotkeyBinding struct {
@@ -238,6 +244,7 @@ var (
 	appTimer  = countdown{duration: countdownLen}
 	timerFace *image.NRGBA
 	hotkeys   []hotkeyBinding
+	config    appConfig
 
 	windowWidth  = defaultWindowSize
 	windowHeight = defaultWindowSize
@@ -252,7 +259,8 @@ func main() {
 	runtime.LockOSThread()
 	procSetProcessDPIAware.Call()
 	timerFace = loadTimerPNG()
-	hotkeys = loadHotkeys()
+	config = loadConfig()
+	hotkeys = hotkeyBindings(config.Hotkeys)
 
 	hInstance, _, _ := procGetModuleHandle.Call(0)
 	className := mustUTF16Ptr("MapleCleanCountdownWindow")
@@ -277,13 +285,17 @@ func main() {
 
 	screenW, _, _ := procGetSystemMetrics.Call(smCxScreen)
 	screenH, _, _ := procGetSystemMetrics.Call(smCyScreen)
+	if config.Window.Width > 0 {
+		windowWidth = clampInt(config.Window.Width, minWindowSize, maxWindowSize)
+	}
+	if config.Window.Height > 0 {
+		windowHeight = clampInt(config.Window.Height, minWindowSize, maxWindowSize)
+	}
 	x := int32(screenW)/2 - int32(windowWidth)/2
 	y := int32(screenH)/3 - int32(windowHeight)/2
-	if pos, ok := loadWindowPosition(); ok {
-		x = pos.X
-		y = pos.Y
-		windowWidth = clampInt(pos.Width, minWindowSize, maxWindowSize)
-		windowHeight = clampInt(pos.Height, minWindowSize, maxWindowSize)
+	if config.Window.Saved {
+		x = config.Window.X
+		y = config.Window.Y
 	} else {
 		if x < 0 {
 			x = 0
@@ -416,27 +428,57 @@ func registerHotkey(hwnd uintptr, id int, modifiers uint32, key uint32, label st
 	}
 }
 
-func loadHotkeys() []hotkeyBinding {
+func hotkeyBindings(cfg hotkeyConfig) []hotkeyBinding {
 	defaults := defaultHotkeyConfig()
-	cfg := defaults
-
-	path := hotkeyConfigPath()
-	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			messageBox("热键配置解析失败", fmt.Sprintf("%s 格式无效，将使用默认热键。\n\n错误：%v", filepath.Base(path), err))
-			cfg = defaults
-		}
-	} else if os.IsNotExist(err) {
-		writeHotkeyConfig(path, defaults)
-	} else {
-		messageBox("热键配置读取失败", fmt.Sprintf("无法读取 %s，将使用默认热键。\n\n错误：%v", filepath.Base(path), err))
-	}
-
 	return []hotkeyBinding{
 		resolveHotkey(hotkeyStart, "启动/继续", cfg.Start, defaults.Start),
 		resolveHotkey(hotkeyPause, "暂停", cfg.Pause, defaults.Pause),
 		resolveHotkey(hotkeyReset, "重置", cfg.Reset, defaults.Reset),
 	}
+}
+
+func defaultConfig() appConfig {
+	return appConfig{
+		Hotkeys: defaultHotkeyConfig(),
+		Window: windowPosition{
+			Width:  defaultWindowSize,
+			Height: defaultWindowSize,
+			Saved:  false,
+		},
+	}
+}
+
+func loadConfig() appConfig {
+	path := configPath()
+	cfg := defaultConfig()
+
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			messageBox("配置解析失败", fmt.Sprintf("%s 格式无效，将使用默认配置。\n\n错误：%v", filepath.Base(path), err))
+			cfg = defaultConfig()
+		}
+	} else if os.IsNotExist(err) {
+		saveConfig(cfg)
+	} else {
+		messageBox("配置读取失败", fmt.Sprintf("无法读取 %s，将使用默认配置。\n\n错误：%v", filepath.Base(path), err))
+	}
+
+	if cfg.Window.Width == 0 {
+		cfg.Window.Width = defaultWindowSize
+	}
+	if cfg.Window.Height == 0 {
+		cfg.Window.Height = defaultWindowSize
+	}
+	return cfg
+}
+
+func saveConfig(cfg appConfig) {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(configPath(), data, 0644)
 }
 
 func defaultHotkeyConfig() hotkeyConfig {
@@ -445,14 +487,6 @@ func defaultHotkeyConfig() hotkeyConfig {
 		Pause: "Alt+F6",
 		Reset: "Alt+F7",
 	}
-}
-
-func writeHotkeyConfig(path string, cfg hotkeyConfig) {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(path, data, 0644)
 }
 
 func resolveHotkey(id int, action string, configured string, fallback string) hotkeyBinding {
@@ -1012,61 +1046,32 @@ func copyToPremultipliedBGRA(dst []byte, src *image.RGBA) {
 	}
 }
 
-func loadWindowPosition() (windowPosition, bool) {
-	data, err := os.ReadFile(positionConfigPath())
-	if err != nil {
-		return windowPosition{}, false
-	}
-
-	var pos windowPosition
-	if err := json.Unmarshal(data, &pos); err != nil {
-		return windowPosition{}, false
-	}
-	if pos.Width == 0 {
-		pos.Width = defaultWindowSize
-	}
-	if pos.Height == 0 {
-		pos.Height = defaultWindowSize
-	}
-	return pos, true
-}
-
 func saveWindowConfig(hwnd uintptr) {
 	var wr rect
 	if ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr))); ok == 0 {
 		return
 	}
 
-	data, err := json.Marshal(windowPosition{
+	config.Window = windowPosition{
 		X:      wr.Left,
 		Y:      wr.Top,
 		Width:  int(wr.Right - wr.Left),
 		Height: int(wr.Bottom - wr.Top),
-	})
-	if err != nil {
-		return
+		Saved:  true,
 	}
-	_ = os.WriteFile(positionConfigPath(), data, 0644)
+	saveConfig(config)
 }
 
 func isInResizeGrip(cursor point, window rect) bool {
 	return cursor.X >= window.Right-resizeGripSize && cursor.Y >= window.Bottom-resizeGripSize
 }
 
-func positionConfigPath() string {
+func configPath() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "simple-timer-position.json"
+		return "config.json"
 	}
-	return filepath.Join(filepath.Dir(exe), "simple-timer-position.json")
-}
-
-func hotkeyConfigPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "simple-timer-hotkeys.json"
-	}
-	return filepath.Join(filepath.Dir(exe), "simple-timer-hotkeys.json")
+	return filepath.Join(filepath.Dir(exe), "config.json")
 }
 
 func clamp(v, low, high float64) float64 {

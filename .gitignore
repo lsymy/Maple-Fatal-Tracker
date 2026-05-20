@@ -1,4 +1,6 @@
 *.exe
 *.pdb
 *.log
+config.json
+simple-timer-hotkeys.json
 simple-timer-position.json

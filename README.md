@@ -16,16 +16,25 @@ The app is a 64x64 transparent borderless window with always-on-top, drag-and-dr
 	- `Alt+F8`: Start / resume
 	- `Alt+F6`: Pause
 	- `Alt+F7`: Reset to 30 seconds
-- You can customize hotkeys with `simple-timer-hotkeys.json` in the same folder as the EXE.
+- You can customize hotkeys with `config.json` in the same folder as the EXE.
 - If the file does not exist, the app creates it automatically with defaults.
 
 Example:
 
 ```json
 {
-	"start": "Alt+F8",
-	"pause": "Alt+F6",
-	"reset": "Ctrl+Shift+R"
+	"hotkeys": {
+		"start": "Alt+F8",
+		"pause": "Alt+F6",
+		"reset": "Ctrl+Shift+R"
+	},
+	"window": {
+		"x": 0,
+		"y": 0,
+		"width": 64,
+		"height": 64,
+		"saved": false
+	}
 }
 ```
 
@@ -42,9 +51,9 @@ Supported format:
 
 ## Position Persistence
 
-- After dragging or resizing the window, the position and size are saved to `simple-timer-position.json` next to the executable.
+- After dragging or resizing the window, the position and size are saved to `config.json` next to the executable.
 - The next time `Simple Timer.exe` starts, it automatically restores the last saved position and size.
-- If you delete `simple-timer-position.json`, the app returns to the default initial position.
+- If you delete `config.json`, the app recreates it with defaults and returns to the default initial position.
 
 ## Build
 

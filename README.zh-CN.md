@@ -14,16 +14,25 @@
 	- `Alt+F8`：启动 / 继续
 	- `Alt+F6`：暂停
 	- `Alt+F7`：重置到 30 秒
-- 你可以通过 EXE 同目录的 `simple-timer-hotkeys.json` 自定义快捷键。
+- 你可以通过 EXE 同目录的 `config.json` 自定义快捷键。
 - 如果该文件不存在，程序会自动按默认值创建。
 
 示例：
 
 ```json
 {
-	"start": "Alt+F8",
-	"pause": "Alt+F6",
-	"reset": "Ctrl+Shift+R"
+	"hotkeys": {
+		"start": "Alt+F8",
+		"pause": "Alt+F6",
+		"reset": "Ctrl+Shift+R"
+	},
+	"window": {
+		"x": 0,
+		"y": 0,
+		"width": 64,
+		"height": 64,
+		"saved": false
+	}
 }
 ```
 
@@ -40,9 +49,9 @@
 
 ## 位置保存
 
-- 拖拽或缩放窗口后，会保存位置和大小到 EXE 同目录的 `simple-timer-position.json`。
+- 拖拽或缩放窗口后，会保存位置和大小到 EXE 同目录的 `config.json`。
 - 下次打开 `Simple Timer.exe` 会自动恢复到上一次位置和大小。
-- 如果删除这个 JSON 文件，就会回到默认初始位置。
+- 如果删除 `config.json`，程序会按默认值重新创建，并回到默认初始位置。
 
 ## 构建
 
