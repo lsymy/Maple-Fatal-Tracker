@@ -126,6 +126,8 @@ const (
 
 	mbOK       = 0x00000000
 	mbIconWarn = 0x00000030
+
+	errorAlreadyExists = 183
 )
 
 type point struct {
@@ -284,6 +286,8 @@ var (
 	procSetProcessDPIAware  = user32.NewProc("SetProcessDPIAware")
 
 	procGetModuleHandle    = kernel32.NewProc("GetModuleHandleW")
+	procCreateMutex        = kernel32.NewProc("CreateMutexW")
+	procCloseHandle        = kernel32.NewProc("CloseHandle")
 	procInitCommonControls = comctl32.NewProc("InitCommonControlsEx")
 	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 	procDeleteDC           = gdi32.NewProc("DeleteDC")
@@ -294,6 +298,7 @@ var (
 	wndProcPtr         = syscall.NewCallback(wndProc)
 	settingsWndProcPtr = syscall.NewCallback(settingsWndProc)
 	appInstance        uintptr
+	singleInstanceLock uintptr
 
 	appTimer  = countdown{duration: countdownLen}
 	timerFace *image.NRGBA
@@ -317,6 +322,12 @@ var (
 
 func main() {
 	runtime.LockOSThread()
+	if !acquireSingleInstanceLock() {
+		messageBox("Simple Timer", "Simple Timer is already running.")
+		return
+	}
+	defer releaseSingleInstanceLock()
+
 	procSetProcessDPIAware.Call()
 	initHotkeyControls()
 	timerFace = loadTimerPNG()
@@ -399,6 +410,27 @@ func main() {
 		}
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		procDispatchMessage.Call(uintptr(unsafe.Pointer(&m)))
+	}
+}
+
+func acquireSingleInstanceLock() bool {
+	name := mustUTF16Ptr("Local\\SimpleTimerSingleInstance")
+	handle, _, err := procCreateMutex.Call(0, 1, uintptr(unsafe.Pointer(name)))
+	if handle == 0 {
+		return false
+	}
+	if errno, ok := err.(syscall.Errno); ok && errno == errorAlreadyExists {
+		procCloseHandle.Call(handle)
+		return false
+	}
+	singleInstanceLock = handle
+	return true
+}
+
+func releaseSingleInstanceLock() {
+	if singleInstanceLock != 0 {
+		procCloseHandle.Call(singleInstanceLock)
+		singleInstanceLock = 0
 	}
 }
 

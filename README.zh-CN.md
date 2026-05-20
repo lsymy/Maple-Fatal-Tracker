@@ -6,6 +6,8 @@
 
 程序是 64x64 透明无边框窗口，支持置顶、拖拽、右下角缩放和全局快捷键；不注入游戏、不读内存、不模拟输入。
 
+程序只允许同时运行一个实例。如果 `Simple Timer.exe` 已经在运行，再次启动会提示并退出。
+
 `timer.png` 会在构建时被嵌入到可执行文件里。程序会以 70% 透明度显示这张图片，并覆盖一层顺时针逐秒减少的阴影。`salute.jpg` 会被转换成程序图标。
 
 ## 快捷键
@@ -76,6 +78,8 @@ go build -ldflags="-H windowsgui" -o "Simple Timer.exe" .
 本程序只使用普通 Win32 窗口、透明分层窗口和 `RegisterHotKey` 全局热键；没有使用 AutoHotkey、键鼠 hook、`SendInput`、模拟按键、读内存、DLL 注入或 DirectX 注入式 overlay。
 
 本程序不会读取、修改、检测或控制 MapleStory / Nexon / 其他任何程序，也不会向其他程序发送键盘、鼠标或宏输入。
+
+单实例保护只使用本程序自己的 Win32 命名互斥量，不枚举进程，也不检查其他窗口。
 
 ## 免责声明
 

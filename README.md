@@ -8,6 +8,8 @@ A simple 30-second Windows countdown timer for reminding the Fatal Stricke coold
 
 The app is a 64x64 transparent borderless window with always-on-top, drag-and-drop positioning, corner resizing, and global hotkeys. It does not inject into the game, read process memory, or simulate input.
 
+Only one instance can run at a time. If `Simple Timer.exe` is already running, launching it again shows a message and exits.
+
 `timer.png` is embedded into the executable at build time. The app displays it at 70% opacity and overlays a smooth clockwise shadow countdown. `salute.jpg` is converted into the application icon.
 
 ## Hotkeys
@@ -78,6 +80,8 @@ After building, `Simple Timer.exe` can run by itself. `timer.png` is only needed
 This app only uses a normal Win32 window, layered-window rendering, and `RegisterHotKey` for global hotkeys. It does not use AutoHotkey, keyboard or mouse hooks, `SendInput`, simulated key presses, process memory reading, DLL injection, or DirectX overlay injection.
 
 This app does not read, modify, detect, or control MapleStory / Nexon / any other program. It also does not send keyboard, mouse, or macro input to other programs.
+
+Single-instance protection uses a named Win32 mutex for this app only. It does not enumerate processes or inspect other windows.
 
 ## Disclaimer
 
