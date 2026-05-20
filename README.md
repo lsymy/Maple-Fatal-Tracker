@@ -12,12 +12,18 @@ Only one instance can run at a time. If `Simple Timer.exe` is already running, l
 
 `timer.png` is embedded into the executable at build time. The app displays it at 70% opacity and overlays a smooth clockwise shadow countdown. `salute.jpg` is converted into the application icon.
 
+## Disclaimer
+
+This tool is only for personal countdown reminders. It is not an official Nexon, Wizet, or MapleStory tool, and it is not affiliated with them in any way.
+
+No program running on the same PC can guarantee that it will never be flagged by game anti-cheat systems. Use this tool at your own risk. If account safety is the top priority, a timer on a second screen or separate device is still the safest option.
+
 ## Hotkeys
 
 - By default:
-	- `Alt+F8`: Start / resume
-	- `Alt+F6`: Pause
-	- `Alt+F7`: Reset to 30 seconds
+  - `Alt+F8`: Start / resume
+  - `Alt+F6`: Pause
+  - `Alt+F7`: Reset to 30 seconds
 - You can customize hotkeys with `config.json` in the same folder as the EXE.
 - You can also right-click the timer and choose `Settings`, click a hotkey field, then press a key combination to set it.
 - If the file does not exist, the app creates it automatically with defaults.
@@ -82,9 +88,3 @@ This app only uses a normal Win32 window, layered-window rendering, and `Registe
 This app does not read, modify, detect, or control MapleStory / Nexon / any other program. It also does not send keyboard, mouse, or macro input to other programs.
 
 Single-instance protection uses a named Win32 mutex for this app only. It does not enumerate processes or inspect other windows.
-
-## Disclaimer
-
-This tool is only for personal countdown reminders. It is not an official Nexon, Wizet, or MapleStory tool, and it is not affiliated with them in any way.
-
-No program running on the same PC can guarantee that it will never be flagged by game anti-cheat systems. Use this tool at your own risk. If account safety is the top priority, a timer on a second screen or separate device is still the safest option.
