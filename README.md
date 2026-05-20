@@ -17,6 +17,7 @@ The app is a 64x64 transparent borderless window with always-on-top, drag-and-dr
 	- `Alt+F6`: Pause
 	- `Alt+F7`: Reset to 30 seconds
 - You can customize hotkeys with `config.json` in the same folder as the EXE.
+- You can also right-click the timer and choose `Settings`, click a hotkey field, then press a key combination to set it.
 - If the file does not exist, the app creates it automatically with defaults.
 
 Example:
@@ -44,10 +45,17 @@ Supported format:
 - Modifiers: `Alt`, `Ctrl`/`Control`, `Shift`, `Win`
 - Main key: `A-Z`, `0-9`, `F1-F24`, `Space`, `Tab`, `Enter`, `Esc`
 - If one hotkey is invalid, only that action falls back to its default value
+- The in-app hotkey picker uses the Win32 hotkey control and records normal `Ctrl` / `Alt` / `Shift` combinations. For `Win` combinations, edit `config.json` manually.
 
 - Left mouse button: Drag the timer window
 - Bottom-right corner: Drag to resize the timer window
-- Right mouse button: Close the app
+- Right mouse button: Open the menu with `Settings` and `Exit`
+
+## Settings Menu
+
+- Right-click the timer window and choose `Settings`; click a hotkey field, then press the desired key combination.
+- Saving settings writes to `config.json` and re-registers the hotkeys immediately.
+- Choose `Exit` from the same menu to close the app.
 
 ## Position Persistence
 

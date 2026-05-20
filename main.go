@@ -40,15 +40,24 @@ const (
 )
 
 const (
-	wsPopup = 0x80000000
+	wsPopup   = 0x80000000
+	wsChild   = 0x40000000
+	wsVisible = 0x10000000
+	wsCaption = 0x00C00000
+	wsBorder  = 0x00800000
+	wsSysMenu = 0x00080000
+	wsTabStop = 0x00010000
 
-	wsExTopmost   = 0x00000008
-	wsExLayered   = 0x00080000
-	wsExAppWindow = 0x00040000
+	wsExDlgModalFrame = 0x00000001
+	wsExTopmost       = 0x00000008
+	wsExLayered       = 0x00080000
+	wsExAppWindow     = 0x00040000
 
 	swShow = 5
 
 	wmDestroy     = 0x0002
+	wmClose       = 0x0010
+	wmCommand     = 0x0111
 	wmTimer       = 0x0113
 	wmMouseMove   = 0x0200
 	wmLButtonDown = 0x0201
@@ -57,6 +66,36 @@ const (
 	wmHotkey      = 0x0312
 
 	mkLButton = 0x0001
+
+	esAutoHScroll = 0x0080
+
+	bsPushButton    = 0x00000000
+	bsDefPushButton = 0x00000001
+
+	mfString = 0x00000000
+
+	tpmRightButton = 0x0002
+	tpmNoNotify    = 0x0080
+	tpmReturnCmd   = 0x0100
+
+	menuSettings = 2001
+	menuExit     = 2002
+
+	settingsEditStart = 3001
+	settingsEditPause = 3002
+	settingsEditReset = 3003
+	settingsSave      = 3004
+	settingsCancel    = 3005
+
+	wmUser       = 0x0400
+	hkmSetHotkey = wmUser + 1
+	hkmGetHotkey = wmUser + 2
+
+	hotkeyfShift   = 0x01
+	hotkeyfControl = 0x02
+	hotkeyfAlt     = 0x04
+
+	iccHotkeyClass = 0x00000040
 
 	modAlt     = 0x0001
 	modControl = 0x0002
@@ -163,6 +202,11 @@ type bitmapInfo struct {
 	Colors [1]rgbQuad
 }
 
+type initCommonControlsEx struct {
+	Size uint32
+	ICC  uint32
+}
+
 type countdown struct {
 	duration time.Duration
 	elapsed  time.Duration
@@ -204,11 +248,13 @@ var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	gdi32    = syscall.NewLazyDLL("gdi32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	comctl32 = syscall.NewLazyDLL("comctl32.dll")
 
 	procRegisterClassEx     = user32.NewProc("RegisterClassExW")
 	procCreateWindowEx      = user32.NewProc("CreateWindowExW")
 	procDefWindowProc       = user32.NewProc("DefWindowProcW")
 	procShowWindow          = user32.NewProc("ShowWindow")
+	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procGetMessage          = user32.NewProc("GetMessageW")
 	procTranslateMessage    = user32.NewProc("TranslateMessage")
 	procDispatchMessage     = user32.NewProc("DispatchMessageW")
@@ -229,17 +275,25 @@ var (
 	procReleaseCapture      = user32.NewProc("ReleaseCapture")
 	procLoadCursor          = user32.NewProc("LoadCursorW")
 	procLoadIcon            = user32.NewProc("LoadIconW")
+	procSendMessage         = user32.NewProc("SendMessageW")
+	procCreatePopupMenu     = user32.NewProc("CreatePopupMenu")
+	procAppendMenu          = user32.NewProc("AppendMenuW")
+	procTrackPopupMenu      = user32.NewProc("TrackPopupMenu")
+	procDestroyMenu         = user32.NewProc("DestroyMenu")
 	procMessageBox          = user32.NewProc("MessageBoxW")
 	procSetProcessDPIAware  = user32.NewProc("SetProcessDPIAware")
 
 	procGetModuleHandle    = kernel32.NewProc("GetModuleHandleW")
+	procInitCommonControls = comctl32.NewProc("InitCommonControlsEx")
 	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 	procDeleteDC           = gdi32.NewProc("DeleteDC")
 	procCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
 	procSelectObject       = gdi32.NewProc("SelectObject")
 	procDeleteObject       = gdi32.NewProc("DeleteObject")
 
-	wndProcPtr = syscall.NewCallback(wndProc)
+	wndProcPtr         = syscall.NewCallback(wndProc)
+	settingsWndProcPtr = syscall.NewCallback(settingsWndProc)
+	appInstance        uintptr
 
 	appTimer  = countdown{duration: countdownLen}
 	timerFace *image.NRGBA
@@ -253,25 +307,32 @@ var (
 	resizing        bool
 	dragCursorStart point
 	dragWindowStart rect
+
+	settingsHwnd      uintptr
+	settingsOwnerHwnd uintptr
+	settingsStartEdit uintptr
+	settingsPauseEdit uintptr
+	settingsResetEdit uintptr
 )
 
 func main() {
 	runtime.LockOSThread()
 	procSetProcessDPIAware.Call()
+	initHotkeyControls()
 	timerFace = loadTimerPNG()
 	config = loadConfig()
 	hotkeys = hotkeyBindings(config.Hotkeys)
 
-	hInstance, _, _ := procGetModuleHandle.Call(0)
+	appInstance, _, _ = procGetModuleHandle.Call(0)
 	className := mustUTF16Ptr("MapleCleanCountdownWindow")
 	windowTitle := mustUTF16Ptr("Simple Timer")
 	cursor, _, _ := procLoadCursor.Call(0, uintptr(idcArrow))
-	icon, _, _ := procLoadIcon.Call(hInstance, uintptr(1))
+	icon, _, _ := procLoadIcon.Call(appInstance, uintptr(1))
 
 	wc := wndClassEx{
 		CbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
 		LpfnWndProc:   wndProcPtr,
-		HInstance:     hInstance,
+		HInstance:     appInstance,
 		HIcon:         icon,
 		HCursor:       cursor,
 		LpszClassName: className,
@@ -282,6 +343,7 @@ func main() {
 	if atom == 0 {
 		fatalf("RegisterClassExW failed: %v", err)
 	}
+	registerSettingsClass(cursor, icon)
 
 	screenW, _, _ := procGetSystemMetrics.Call(smCxScreen)
 	screenH, _, _ := procGetSystemMetrics.Call(smCyScreen)
@@ -316,7 +378,7 @@ func main() {
 		uintptr(windowHeight),
 		0,
 		0,
-		hInstance,
+		appInstance,
 		0,
 	)
 	if hwnd == 0 {
@@ -400,7 +462,7 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 		}
 		return 0
 	case wmRButtonUp:
-		procDestroyWindow.Call(hwnd)
+		showContextMenu(hwnd)
 		return 0
 	case wmDestroy:
 		procKillTimer.Call(hwnd, timerID)
@@ -415,16 +477,320 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 	return ret
 }
 
-func registerHotkeys(hwnd uintptr, hotkeys []hotkeyBinding) {
-	for _, hk := range hotkeys {
-		registerHotkey(hwnd, hk.id, hk.modifiers, hk.key, fmt.Sprintf("%s (%s)", hk.action, hk.spec))
+func registerSettingsClass(cursor uintptr, icon uintptr) {
+	className := mustUTF16Ptr("SimpleTimerSettingsWindow")
+	wc := wndClassEx{
+		CbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
+		LpfnWndProc:   settingsWndProcPtr,
+		HInstance:     appInstance,
+		HIcon:         icon,
+		HCursor:       cursor,
+		LpszClassName: className,
+		HIconSm:       icon,
+	}
+	procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
+}
+
+func initHotkeyControls() {
+	icc := initCommonControlsEx{
+		Size: uint32(unsafe.Sizeof(initCommonControlsEx{})),
+		ICC:  iccHotkeyClass,
+	}
+	procInitCommonControls.Call(uintptr(unsafe.Pointer(&icc)))
+}
+
+func showContextMenu(hwnd uintptr) {
+	menu, _, _ := procCreatePopupMenu.Call()
+	if menu == 0 {
+		return
+	}
+	defer procDestroyMenu.Call(menu)
+
+	procAppendMenu.Call(menu, mfString, menuSettings, uintptr(unsafe.Pointer(mustUTF16Ptr("Settings"))))
+	procAppendMenu.Call(menu, mfString, menuExit, uintptr(unsafe.Pointer(mustUTF16Ptr("Exit"))))
+
+	var p point
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
+	procSetForegroundWindow.Call(hwnd)
+	cmd, _, _ := procTrackPopupMenu.Call(menu, tpmReturnCmd|tpmRightButton|tpmNoNotify, uintptr(p.X), uintptr(p.Y), 0, hwnd, 0)
+	switch cmd {
+	case menuSettings:
+		openSettingsWindow(hwnd)
+	case menuExit:
+		procDestroyWindow.Call(hwnd)
 	}
 }
 
-func registerHotkey(hwnd uintptr, id int, modifiers uint32, key uint32, label string) {
+func openSettingsWindow(owner uintptr) {
+	if settingsHwnd != 0 {
+		procSetForegroundWindow.Call(settingsHwnd)
+		return
+	}
+
+	var wr rect
+	procGetWindowRect.Call(owner, uintptr(unsafe.Pointer(&wr)))
+	x := wr.Left
+	y := wr.Bottom + 8
+	if y < 0 {
+		y = 0
+	}
+
+	settingsOwnerHwnd = owner
+	className := mustUTF16Ptr("SimpleTimerSettingsWindow")
+	title := mustUTF16Ptr("Settings")
+	hwnd, _, _ := procCreateWindowEx.Call(
+		wsExDlgModalFrame|wsExTopmost,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(title)),
+		wsCaption|wsSysMenu|wsVisible,
+		uintptr(x),
+		uintptr(y),
+		360,
+		205,
+		owner,
+		0,
+		appInstance,
+		0,
+	)
+	if hwnd == 0 {
+		settingsOwnerHwnd = 0
+		return
+	}
+	settingsHwnd = hwnd
+	createSettingsControls(hwnd)
+	procSetForegroundWindow.Call(hwnd)
+}
+
+func createSettingsControls(hwnd uintptr) {
+	createControl("STATIC", "Start", wsChild|wsVisible, 16, 22, 86, 22, hwnd, 0)
+	settingsStartEdit = createControl("msctls_hotkey32", "", wsChild|wsVisible|wsBorder|wsTabStop, 104, 18, 220, 24, hwnd, settingsEditStart)
+	setHotkeyControl(settingsStartEdit, config.Hotkeys.Start)
+
+	createControl("STATIC", "Pause", wsChild|wsVisible, 16, 58, 86, 22, hwnd, 0)
+	settingsPauseEdit = createControl("msctls_hotkey32", "", wsChild|wsVisible|wsBorder|wsTabStop, 104, 54, 220, 24, hwnd, settingsEditPause)
+	setHotkeyControl(settingsPauseEdit, config.Hotkeys.Pause)
+
+	createControl("STATIC", "Reset", wsChild|wsVisible, 16, 94, 86, 22, hwnd, 0)
+	settingsResetEdit = createControl("msctls_hotkey32", "", wsChild|wsVisible|wsBorder|wsTabStop, 104, 90, 220, 24, hwnd, settingsEditReset)
+	setHotkeyControl(settingsResetEdit, config.Hotkeys.Reset)
+
+	createControl("BUTTON", "Save", wsChild|wsVisible|wsTabStop|bsDefPushButton, 144, 134, 82, 30, hwnd, settingsSave)
+	createControl("BUTTON", "Cancel", wsChild|wsVisible|wsTabStop|bsPushButton, 240, 134, 82, 30, hwnd, settingsCancel)
+}
+
+func createControl(className string, text string, style uintptr, x int32, y int32, width int32, height int32, parent uintptr, id uintptr) uintptr {
+	classPtr := mustUTF16Ptr(className)
+	textPtr := mustUTF16Ptr(text)
+	hwnd, _, _ := procCreateWindowEx.Call(
+		0,
+		uintptr(unsafe.Pointer(classPtr)),
+		uintptr(unsafe.Pointer(textPtr)),
+		style,
+		uintptr(x),
+		uintptr(y),
+		uintptr(width),
+		uintptr(height),
+		parent,
+		id,
+		appInstance,
+		0,
+	)
+	return hwnd
+}
+
+func settingsWndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintptr {
+	switch message {
+	case wmCommand:
+		switch loword(wParam) {
+		case settingsSave:
+			if saveSettingsFromWindow() {
+				procDestroyWindow.Call(hwnd)
+			}
+			return 0
+		case settingsCancel:
+			procDestroyWindow.Call(hwnd)
+			return 0
+		}
+	case wmClose:
+		procDestroyWindow.Call(hwnd)
+		return 0
+	case wmDestroy:
+		if hwnd == settingsHwnd {
+			settingsHwnd = 0
+			settingsOwnerHwnd = 0
+			settingsStartEdit = 0
+			settingsPauseEdit = 0
+			settingsResetEdit = 0
+		}
+		return 0
+	}
+	ret, _, _ := procDefWindowProc.Call(hwnd, uintptr(message), wParam, lParam)
+	return ret
+}
+
+func saveSettingsFromWindow() bool {
+	newConfig := hotkeyConfig{
+		Start: hotkeyControlSpec(settingsStartEdit),
+		Pause: hotkeyControlSpec(settingsPauseEdit),
+		Reset: hotkeyControlSpec(settingsResetEdit),
+	}
+	if err := validateHotkeyConfig(newConfig); err != nil {
+		messageBox("Settings", err.Error())
+		return false
+	}
+
+	newHotkeys := hotkeyBindings(newConfig)
+	oldHotkeys := hotkeys
+	unregisterHotkeys(settingsOwnerHwnd, oldHotkeys)
+	if !registerHotkeys(settingsOwnerHwnd, newHotkeys) {
+		unregisterHotkeys(settingsOwnerHwnd, newHotkeys)
+		registerHotkeys(settingsOwnerHwnd, oldHotkeys)
+		messageBox("Settings", "Hotkey registration failed. The previous hotkeys were restored.")
+		return false
+	}
+
+	hotkeys = newHotkeys
+	config.Hotkeys = newConfig
+	saveConfig(config)
+	return true
+}
+
+func validateHotkeyConfig(cfg hotkeyConfig) error {
+	checks := []struct {
+		name string
+		spec string
+	}{
+		{name: "Start", spec: cfg.Start},
+		{name: "Pause", spec: cfg.Pause},
+		{name: "Reset", spec: cfg.Reset},
+	}
+	for _, check := range checks {
+		if strings.TrimSpace(check.spec) == "" {
+			return fmt.Errorf("%s hotkey is empty.", check.name)
+		}
+		if _, _, err := parseHotkey(check.spec); err != nil {
+			return fmt.Errorf("%s hotkey is invalid: %v", check.name, err)
+		}
+	}
+	return nil
+}
+
+func setHotkeyControl(hwnd uintptr, spec string) {
+	modifiers, key, err := parseHotkey(spec)
+	if err != nil {
+		return
+	}
+	flags := registerModifiersToHotkeyFlags(modifiers)
+	value := uintptr((key & 0xff) | (flags << 8))
+	procSendMessage.Call(hwnd, hkmSetHotkey, value, 0)
+}
+
+func hotkeyControlSpec(hwnd uintptr) string {
+	value, _, _ := procSendMessage.Call(hwnd, hkmGetHotkey, 0, 0)
+	key := uint32(value & 0xff)
+	flags := uint32((value >> 8) & 0xff)
+	if key == 0 {
+		return ""
+	}
+	return hotkeySpecFromParts(hotkeyFlagsToRegisterModifiers(flags), key)
+}
+
+func registerModifiersToHotkeyFlags(modifiers uint32) uint32 {
+	var flags uint32
+	if modifiers&modShift != 0 {
+		flags |= hotkeyfShift
+	}
+	if modifiers&modControl != 0 {
+		flags |= hotkeyfControl
+	}
+	if modifiers&modAlt != 0 {
+		flags |= hotkeyfAlt
+	}
+	return flags
+}
+
+func hotkeyFlagsToRegisterModifiers(flags uint32) uint32 {
+	var modifiers uint32
+	if flags&hotkeyfShift != 0 {
+		modifiers |= modShift
+	}
+	if flags&hotkeyfControl != 0 {
+		modifiers |= modControl
+	}
+	if flags&hotkeyfAlt != 0 {
+		modifiers |= modAlt
+	}
+	return modifiers
+}
+
+func hotkeySpecFromParts(modifiers uint32, key uint32) string {
+	parts := make([]string, 0, 4)
+	if modifiers&modControl != 0 {
+		parts = append(parts, "Ctrl")
+	}
+	if modifiers&modAlt != 0 {
+		parts = append(parts, "Alt")
+	}
+	if modifiers&modShift != 0 {
+		parts = append(parts, "Shift")
+	}
+	if modifiers&modWin != 0 {
+		parts = append(parts, "Win")
+	}
+	parts = append(parts, virtualKeyName(key))
+	return strings.Join(parts, "+")
+}
+
+func virtualKeyName(key uint32) string {
+	if key >= 'A' && key <= 'Z' {
+		return string(rune(key))
+	}
+	if key >= '0' && key <= '9' {
+		return string(rune(key))
+	}
+	if key >= vkF1 && key <= vkF1+23 {
+		return fmt.Sprintf("F%d", key-vkF1+1)
+	}
+	switch key {
+	case 0x20:
+		return "Space"
+	case 0x09:
+		return "Tab"
+	case 0x0D:
+		return "Enter"
+	case 0x1B:
+		return "Esc"
+	default:
+		return fmt.Sprintf("VK%02X", key)
+	}
+}
+
+func loword(value uintptr) int {
+	return int(value & 0xffff)
+}
+
+func registerHotkeys(hwnd uintptr, hotkeys []hotkeyBinding) bool {
+	okAll := true
+	for _, hk := range hotkeys {
+		if !registerHotkey(hwnd, hk.id, hk.modifiers, hk.key, fmt.Sprintf("%s (%s)", hk.action, hk.spec)) {
+			okAll = false
+		}
+	}
+	return okAll
+}
+
+func registerHotkey(hwnd uintptr, id int, modifiers uint32, key uint32, label string) bool {
 	ok, _, err := procRegisterHotKey.Call(hwnd, uintptr(id), uintptr(modifiers), uintptr(key))
 	if ok == 0 {
 		messageBox("快捷键注册失败", fmt.Sprintf("%s 注册失败。可能已经被其他程序占用。\n\n系统返回：%v", label, err))
+		return false
+	}
+	return true
+}
+
+func unregisterHotkeys(hwnd uintptr, hotkeys []hotkeyBinding) {
+	for _, hk := range hotkeys {
+		procUnregisterHotKey.Call(hwnd, uintptr(hk.id))
 	}
 }
 
