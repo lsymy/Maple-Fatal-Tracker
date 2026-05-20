@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -58,7 +60,10 @@ const (
 
 	modAlt     = 0x0001
 	modControl = 0x0002
+	modShift   = 0x0004
+	modWin     = 0x0008
 
+	vkF1 = 0x70
 	vkF6 = 0x75
 	vkF7 = 0x76
 	vkF8 = 0x77
@@ -172,6 +177,20 @@ type windowPosition struct {
 	Height int   `json:"height"`
 }
 
+type hotkeyConfig struct {
+	Start string `json:"start"`
+	Pause string `json:"pause"`
+	Reset string `json:"reset"`
+}
+
+type hotkeyBinding struct {
+	id        int
+	action    string
+	spec      string
+	modifiers uint32
+	key       uint32
+}
+
 //go:embed timer.png
 var embeddedTimerPNG []byte
 
@@ -218,6 +237,7 @@ var (
 
 	appTimer  = countdown{duration: countdownLen}
 	timerFace *image.NRGBA
+	hotkeys   []hotkeyBinding
 
 	windowWidth  = defaultWindowSize
 	windowHeight = defaultWindowSize
@@ -232,6 +252,7 @@ func main() {
 	runtime.LockOSThread()
 	procSetProcessDPIAware.Call()
 	timerFace = loadTimerPNG()
+	hotkeys = loadHotkeys()
 
 	hInstance, _, _ := procGetModuleHandle.Call(0)
 	className := mustUTF16Ptr("MapleCleanCountdownWindow")
@@ -290,7 +311,7 @@ func main() {
 		fatalf("CreateWindowExW failed: %v", err)
 	}
 
-	registerHotkeys(hwnd)
+	registerHotkeys(hwnd, hotkeys)
 	procSetTimer.Call(hwnd, timerID, frameMS, 0)
 	render(hwnd)
 	procShowWindow.Call(hwnd, swShow)
@@ -371,9 +392,9 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 		return 0
 	case wmDestroy:
 		procKillTimer.Call(hwnd, timerID)
-		procUnregisterHotKey.Call(hwnd, hotkeyStart)
-		procUnregisterHotKey.Call(hwnd, hotkeyPause)
-		procUnregisterHotKey.Call(hwnd, hotkeyReset)
+		for _, hk := range hotkeys {
+			procUnregisterHotKey.Call(hwnd, uintptr(hk.id))
+		}
 		procPostQuitMessage.Call(0)
 		return 0
 	}
@@ -382,16 +403,132 @@ func wndProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintp
 	return ret
 }
 
-func registerHotkeys(hwnd uintptr) {
-	registerHotkey(hwnd, hotkeyStart, modAlt, vkF8, "Alt+F8 启动/继续")
-	registerHotkey(hwnd, hotkeyPause, modAlt, vkF6, "Alt+F6 暂停")
-	registerHotkey(hwnd, hotkeyReset, modAlt, vkF7, "Alt+F7 重置")
+func registerHotkeys(hwnd uintptr, hotkeys []hotkeyBinding) {
+	for _, hk := range hotkeys {
+		registerHotkey(hwnd, hk.id, hk.modifiers, hk.key, fmt.Sprintf("%s (%s)", hk.action, hk.spec))
+	}
 }
 
 func registerHotkey(hwnd uintptr, id int, modifiers uint32, key uint32, label string) {
 	ok, _, err := procRegisterHotKey.Call(hwnd, uintptr(id), uintptr(modifiers), uintptr(key))
 	if ok == 0 {
 		messageBox("快捷键注册失败", fmt.Sprintf("%s 注册失败。可能已经被其他程序占用。\n\n系统返回：%v", label, err))
+	}
+}
+
+func loadHotkeys() []hotkeyBinding {
+	defaults := defaultHotkeyConfig()
+	cfg := defaults
+
+	path := hotkeyConfigPath()
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			messageBox("热键配置解析失败", fmt.Sprintf("%s 格式无效，将使用默认热键。\n\n错误：%v", filepath.Base(path), err))
+			cfg = defaults
+		}
+	} else if os.IsNotExist(err) {
+		writeHotkeyConfig(path, defaults)
+	} else {
+		messageBox("热键配置读取失败", fmt.Sprintf("无法读取 %s，将使用默认热键。\n\n错误：%v", filepath.Base(path), err))
+	}
+
+	return []hotkeyBinding{
+		resolveHotkey(hotkeyStart, "启动/继续", cfg.Start, defaults.Start),
+		resolveHotkey(hotkeyPause, "暂停", cfg.Pause, defaults.Pause),
+		resolveHotkey(hotkeyReset, "重置", cfg.Reset, defaults.Reset),
+	}
+}
+
+func defaultHotkeyConfig() hotkeyConfig {
+	return hotkeyConfig{
+		Start: "Alt+F8",
+		Pause: "Alt+F6",
+		Reset: "Alt+F7",
+	}
+}
+
+func writeHotkeyConfig(path string, cfg hotkeyConfig) {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0644)
+}
+
+func resolveHotkey(id int, action string, configured string, fallback string) hotkeyBinding {
+	if strings.TrimSpace(configured) == "" {
+		configured = fallback
+	}
+	modifiers, key, err := parseHotkey(configured)
+	if err != nil {
+		messageBox("热键配置无效", fmt.Sprintf("%s 的配置 \"%s\" 无效，将回退为默认值 \"%s\"。\n\n错误：%v", action, configured, fallback, err))
+		modifiers, key, _ = parseHotkey(fallback)
+		configured = fallback
+	}
+	return hotkeyBinding{id: id, action: action, spec: configured, modifiers: modifiers, key: key}
+}
+
+func parseHotkey(spec string) (uint32, uint32, error) {
+	parts := strings.Split(spec, "+")
+	if len(parts) == 0 {
+		return 0, 0, fmt.Errorf("空字符串")
+	}
+
+	var modifiers uint32
+	for i := 0; i < len(parts)-1; i++ {
+		t := strings.TrimSpace(strings.ToUpper(parts[i]))
+		switch t {
+		case "ALT":
+			modifiers |= modAlt
+		case "CTRL", "CONTROL":
+			modifiers |= modControl
+		case "SHIFT":
+			modifiers |= modShift
+		case "WIN", "WINDOWS":
+			modifiers |= modWin
+		default:
+			return 0, 0, fmt.Errorf("不支持的修饰键: %s", parts[i])
+		}
+	}
+
+	keyToken := strings.TrimSpace(strings.ToUpper(parts[len(parts)-1]))
+	key, err := parseVirtualKey(keyToken)
+	if err != nil {
+		return 0, 0, err
+	}
+	return modifiers, key, nil
+}
+
+func parseVirtualKey(key string) (uint32, error) {
+	if key == "" {
+		return 0, fmt.Errorf("未指定主键")
+	}
+
+	if len(key) == 1 {
+		ch := key[0]
+		if (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') {
+			return uint32(ch), nil
+		}
+	}
+
+	if strings.HasPrefix(key, "F") {
+		n, err := strconv.Atoi(strings.TrimPrefix(key, "F"))
+		if err == nil && n >= 1 && n <= 24 {
+			return vkF1 + uint32(n-1), nil
+		}
+	}
+
+	switch key {
+	case "SPACE":
+		return 0x20, nil
+	case "TAB":
+		return 0x09, nil
+	case "ENTER", "RETURN":
+		return 0x0D, nil
+	case "ESC", "ESCAPE":
+		return 0x1B, nil
+	default:
+		return 0, fmt.Errorf("不支持的主键: %s", key)
 	}
 }
 
@@ -922,6 +1059,14 @@ func positionConfigPath() string {
 		return "simple-timer-position.json"
 	}
 	return filepath.Join(filepath.Dir(exe), "simple-timer-position.json")
+}
+
+func hotkeyConfigPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "simple-timer-hotkeys.json"
+	}
+	return filepath.Join(filepath.Dir(exe), "simple-timer-hotkeys.json")
 }
 
 func clamp(v, low, high float64) float64 {
